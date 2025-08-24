@@ -1,6 +1,7 @@
 import random
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -67,13 +68,13 @@ class _DiffusersBackend:
                 DPMSolverMultistepScheduler,
                 EulerAncestralDiscreteScheduler,
             )
-        except Exception as e:
-            # diffusers/torch missing — leave pipe=None to trigger placeholder fallback
+        except Exception:
             return
 
         model_dir = Path(settings.sd_model_dir)
         model_path = self._pick_model(model_dir)
         if not model_path:
+            print("[SD] No model file found in", model_dir)
             return
 
         # Device & dtype
@@ -81,17 +82,24 @@ class _DiffusersBackend:
         if device == "cuda" and not torch.cuda.is_available():
             device = "cpu"
 
-        dtype = torch.float16 if settings.sd_torch_dtype.lower() in ("fp16","float16") and device != "cpu" else torch.float32
+        # IMPORTANT: fp16 only on CUDA. CPU requires fp32.
+        dtype = torch.float16 if (settings.sd_torch_dtype.lower() in ("fp16","float16") and device == "cuda") else torch.float32
 
-        # Choose pipeline based on filename
         name = model_path.name.lower()
         is_xl = "xl" in name
-        try:
-            if is_xl:
-                from diffusers import StableDiffusionXLPipeline as Pipe
-            else:
-                from diffusers import StableDiffusionPipeline as Pipe
 
+        # *** Strongly prefer SD1.5 on Jetson unless explicitly set ***
+        # If auto-picked XL but you didn't set SD_MODEL_FILE, fall back to SD1.5 if present.
+        if is_xl and not settings.sd_model_file:
+            # look for any non-XL as a safer default
+            non_xl = [p for p in (list(model_dir.glob("**/*.safetensors")) + list(model_dir.glob("**/*.ckpt"))) if "xl" not in p.name.lower()]
+            if non_xl:
+                model_path = non_xl[0]
+                name = model_path.name.lower()
+                is_xl = False
+
+        try:
+            Pipe = StableDiffusionXLPipeline if is_xl else StableDiffusionPipeline
             pipe = Pipe.from_single_file(
                 str(model_path),
                 torch_dtype=dtype,
@@ -99,51 +107,65 @@ class _DiffusersBackend:
             )
 
             # Scheduler
-            if settings.sd_scheduler.lower().startswith("dpm"):
+            scheduler_name = settings.sd_scheduler.lower()
+            if scheduler_name.startswith("dpm"):
                 from diffusers import DPMSolverMultistepScheduler
                 pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-            elif settings.sd_scheduler.lower().startswith("euler"):
+            elif scheduler_name.startswith("euler"):
                 from diffusers import EulerAncestralDiscreteScheduler
                 pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
 
-            # Memory helpers
-            if hasattr(pipe, "enable_attention_slicing"):
-                pipe.enable_attention_slicing()
-            if hasattr(pipe, "enable_vae_slicing"):
-                pipe.enable_vae_slicing()
-            if hasattr(pipe, "enable_model_cpu_offload") and device == "cuda":
-                # Optional; can help on tight VRAM
-                pipe.enable_model_cpu_offload()
+            # PROBLEMATIC ON JETSON: cpu offload often stalls.
+            # -> Keep the whole pipe on a single device.
+            if device == "cuda":
+                pipe.to("cuda")
             else:
-                pipe.to(device)
+                pipe.to("cpu")
+
+            # Attention slicing can help VRAM, but turn it OFF first while debugging stalls.
+            if hasattr(pipe, "disable_attention_slicing"):
+                pipe.disable_attention_slicing()
+            if hasattr(pipe, "set_progress_bar_config"):
+                pipe.set_progress_bar_config(disable=True)
+
+            # Optional, sometimes helps allocator on Jetson
+            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
             self.pipe = pipe
             self.model_path = model_path
             self.variant = "sdxl" if is_xl else "sd15"
-        except Exception:
-            # Loading failed (bad file / incompatible build) — fallback will kick in
+            print(f"[SD] Loaded {self.variant.upper()} model: {model_path.name} on {device} dtype={dtype}")
+        except Exception as e:
+            print("[SD] Failed to init:", e)
             self.pipe = None
 
+    # inside _DiffusersBackend.render_one(self, positive_prompt, negative_prompt, seed):
     def render_one(self, positive_prompt: str, negative_prompt: str, seed: int) -> Optional[Image.Image]:
         if self.pipe is None:
             return None
         try:
             import torch
-            generator = None
-            # Build a generator only if CUDA/cpu-seeding desired
-            # (torch.Generator works on both)
-            generator = torch.Generator(device=self.pipe.device).manual_seed(seed)
+            # Clamp sizes to safe defaults, especially for SDXL
             w, h = self.size
-            result = self.pipe(
+            if self.variant == "sdxl":
+                w = min(w, 1024)
+                h = min(h, 1024)
+            else:
+                # SD1.5: start conservative; you can raise later
+                w = min(w, 768)
+                h = min(h, 768)
+
+            generator = torch.Generator(device=str(self.pipe.device)).manual_seed(seed)
+            return self.pipe(
                 prompt=positive_prompt,
                 negative_prompt=negative_prompt or settings.sd_negative,
                 num_inference_steps=settings.sd_steps,
                 guidance_scale=settings.sd_cfg,
                 width=w, height=h,
                 generator=generator,
-            )
-            return result.images[0]
-        except Exception:
+            ).images[0]
+        except Exception as e:
+            print("[SD] Generation error:", e)
             return None
 
 
