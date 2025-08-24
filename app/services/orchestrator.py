@@ -15,6 +15,17 @@ def _pick_main(stories: List[Story]) -> Story:
     # naive heuristic: pick first or highest image width if available
     return stories[0]
 
+# add this helper near the top of the file
+def _slugify_unique(session, title: str) -> str:
+    base = slugify(title)
+    slug = base
+    i = 2
+    # Loop until we find a free slug
+    while session.exec(select(Story).where(Story.slug == slug)).first():
+        slug = f"{base}-{i}"
+        i += 1
+    return slug
+
 def generate_frontpage(n: int | None = None) -> Tuple[Story, List[Story]]:
     n = n or settings.app_frontpage_story_count
 
@@ -37,7 +48,7 @@ def generate_frontpage(n: int | None = None) -> Tuple[Story, List[Story]]:
     with get_session() as s:
         for h in heads:
             expanded = llm.expand_story(h["title"], h["summary"], h["keywords"])
-            slug = slugify(expanded["title"])
+            slug = _slugify_unique(s, expanded["title"])
             story = Story(
                 slug=slug,
                 title=expanded["title"],
