@@ -51,33 +51,27 @@ def generate_frontpage(n: int | None = None) -> Tuple[Story, List[Story]]:
             s.commit()
             s.refresh(story)
 
-            # 2) Images (variants)
-            variants = sd.render_variants(expanded["title"], n=2)
-            primary_image_id = None
-            for v in variants:
-                img = Image(
-                    story_id=story.id,
-                    path=v["path"],
-                    width=v["width"],
-                    height=v["height"],
-                    model_name=v["model_name"],
-                    sampler=v["sampler"],
-                    steps=v["steps"],
-                    cfg_scale=v["cfg_scale"],
-                    seed=v["seed"],
-                    positive_prompt=v["positive_prompt"],
-                    negative_prompt=v["negative_prompt"],
-                )
-                s.add(img)
-                s.commit()
-                s.refresh(img)
-                if primary_image_id is None:
-                    primary_image_id = img.id
+            # 2) Choose an image prompt and render images
+            #    (Merge style_notes into the positive prompt for convenience)
+            ip = expanded["image_prompts"][0] if expanded.get("image_prompts") else {
+                "positive": expanded["title"],
+                "negative": settings.sd_negative,
+                "style_notes": ""
+            }
+            positive = (ip.get("positive","").strip() + ", " + ip.get("style_notes","").strip(", ").strip()).strip(", ")
+            negative = ip.get("negative","").strip() or settings.sd_negative
+            seeds = [random.randint(1, 10_000_000) for _ in range(2)]
+            variants = sd.render_variants(
+                story_title=expanded["title"],
+                positive_prompt=positive,
+                negative_prompt=negative,
+                seeds=seeds,
+            )
 
-                # 3) Thumbnail
-                src = Path("app") / v["path"]  # stored relative to app/
-                thumb_path = src.parent / f"thumb_{Path(v['path']).stem}.jpg"
-                make_thumbnail(src, thumb_path, settings.thumb_size())
+            # 3) Thumbnail
+            src = Path("app") / v["path"]  # stored relative to app/
+            thumb_path = src.parent / f"thumb_{Path(v['path']).stem}.jpg"
+            make_thumbnail(src, thumb_path, settings.thumb_size())
 
             story.primary_image_id = primary_image_id
             story.status = "published"

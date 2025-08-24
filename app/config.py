@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     sd_steps: int = 28
     sd_cfg: float = 6.5
     sd_negative: str = "lowres, blurry, jpeg artifacts, watermark"
+    sd_model_dir: str = "/media/ubuntu/ssd_drive/sd_models"
+    sd_model_file: str = ""   # optional; auto-pick if empty
+    sd_torch_dtype: str = "fp16"  # fp16|fp32
+    sd_scheduler: str = "dpm-solver"
 
     @field_validator("app_thumb_size", "app_main_image_size")
     @classmethod
