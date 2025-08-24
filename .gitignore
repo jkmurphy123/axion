@@ -205,3 +205,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.newsgen.db*
+.newsgen.sqlite*
+/app/static/images/*
+!app/static/images/.gitkeep
+/.venv
+/.envrc
+/.idea
+.vscode/

@@ -1,0 +1,33 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<section class="grid">
+  {% if main_story %}
+  <article class="main-story">
+    <a href="/story/{{ main_story.slug }}">
+      {% if main_image %}
+      <img class="main-img" src="{{ url_for('static', path=main_image.path.replace('static/', '')) }}" alt="">
+      {% endif %}
+      <h1>{{ main_story.title }}</h1>
+      <p class="lede">{{ main_story.summary }}</p>
+    </a>
+  </article>
+  {% endif %}
+
+  <aside class="sidebar">
+    <h2>More Stories</h2>
+    <div class="sidebar-list">
+      {% for s in sidebar %}
+      <a class="sidebar-item" href="/story/{{ s.slug }}">
+        {% if s._thumb_path %}
+        <img src="{{ url_for('static', path=s._thumb_path) }}" alt="">
+        {% endif %}
+        <div>
+          <h3>{{ s.title }}</h3>
+          <p>{{ s.summary }}</p>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+{% endblock %}

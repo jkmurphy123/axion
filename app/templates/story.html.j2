@@ -1,0 +1,13 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<article class="story">
+  <h1>{{ story.title }}</h1>
+  {% if image %}
+  <img class="story-img" src="{{ url_for('static', path=image.path.replace('static/', '')) }}" alt="">
+  {% endif %}
+  <p class="lede">{{ story.summary }}</p>
+  <div class="body">
+    {% filter safe %}{{ story.body_md | replace('\n', '<br/>') }}{% endfilter %}
+  </div>
+</article>
+{% endblock %}
