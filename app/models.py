@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship
@@ -8,7 +6,7 @@ from sqlmodel import SQLModel, Field, Relationship
 class Image(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    # FK to Story (one-to-many side)
+    # FK to Story (one-to-many)
     story_id: Optional[int] = Field(default=None, foreign_key="story.id", index=True)
 
     path: str
@@ -23,11 +21,11 @@ class Image(SQLModel, table=True):
     negative_prompt: Optional[str] = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Disambiguate: join via Image.story_id -> Story.id
+    # Disambiguate join: Image.story_id -> Story.id
     story: Optional["Story"] = Relationship(
         back_populates="images",
         sa_relationship_kwargs={
-            "primaryjoin": "Image.story_id==Story.id",
+            "primaryjoin": lambda: Image.story_id == Story.id,  # concrete expression
         },
     )
 
@@ -42,25 +40,25 @@ class Story(SQLModel, table=True):
     topic_tags: Optional[str] = Field(default="[]")  # JSON string for simplicity
     seed_text: Optional[str] = None
 
-    # FK back to Image for the featured/primary image
+    # Featured image FK
     primary_image_id: Optional[int] = Field(default=None, foreign_key="image.id")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Disambiguate: join via Image.story_id -> Story.id
-    images: List[Image] = Relationship(
+    # Disambiguate join: Story.id -> Image.story_id
+    images: List["Image"] = Relationship(
         back_populates="story",
         sa_relationship_kwargs={
-            "primaryjoin": "Story.id==Image.story_id",
+            "primaryjoin": lambda: Story.id == Image.story_id,  # concrete expression
             "cascade": "all, delete-orphan",
         },
     )
 
-    # Optional: convenient relationship for the featured image
-    primary_image: Optional[Image] = Relationship(
+    # Convenience relationship for the featured image
+    primary_image: Optional["Image"] = Relationship(
         sa_relationship_kwargs={
-            "primaryjoin": "Story.primary_image_id==Image.id",
+            "primaryjoin": lambda: Story.primary_image_id == Image.id,
             "uselist": False,
         }
     )

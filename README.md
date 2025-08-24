@@ -43,10 +43,16 @@ Ready to run: generates placeholder stories + images and renders a news-style ho
 
 cd projects
 git clone https://github.com/jkmurphy123/axion.git
-cd axion
 #python -m venv .venv
 source llm_env/bin/activate  
 pip install -r requirements.txt
+
+# normal run
+
+cd projects
+source llm_env/bin/activate 
+cd axion
+uvicorn app.main:app --reload
 
 # Optional: copy env
 cp .env.example .env
